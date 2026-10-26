@@ -2,15 +2,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { warmCloverSprites } from "./clover";
 import {
-  CRYSTAL_REBIRTHS, TIERS, TOTAL_ENTRIES, UPGRADES, autoInterval, canRebirth,
-  clearSave, crystalUnlocked, cursedUnlocked, glitchedUnlocked, CURSED_REBIRTHS, GLITCHED_REBIRTHS, discoveredCount, fmtOdds, getCrystalChance, getCursedChance, getGlitchedChance, doRebirth, fmt, getLuck, newSave,
-  rebirthCost, rollBatch, rollsPerClick, valueMult, ROLL_DURATION, tierProbabilities, drawTier,
+  TIERS, TOTAL_ENTRIES, UPGRADES, autoInterval, canRebirth,
+  clearSave, crystalUnlocked, cursedUnlocked, glitchedUnlocked, discoveredCount, doRebirth, fmt, getLuck, newSave,
+  rebirthCost, rollBatch, ROLL_DURATION, tierProbabilities, drawTier,
   addLifetime,
   type RollResult, type UpgradeId,
 } from "./game/data";
 import { useGameSession } from "./game/useGameSession";
 import { sfx } from "./game/sound";
-import { Block, BlockButton, CloverImg, PixelIcon, RarityText, variantPrefix } from "./components/ui";
+import { Block, BlockButton, CloverImg, PixelIcon, variantPrefix } from "./components/ui";
 import { IndexModal, Modal, OfflineModal, RebirthModal, RevealBanner, SettingsModal, ShopModal, type RevealData } from "./components/panels";
 import { ParticleCanvas, type ParticleHandle } from "./components/ParticleCanvas";
 import { RollHistory } from "./components/RollHistory";
@@ -24,7 +24,18 @@ const SPIN_ITEMS = 36;
 const SPIN_TARGET = 30;
 /** The reel stops this early, leaving a beat for the landing flash before the reveal. */
 const SPIN_SETTLE = 420;
-type SpinState = { key: number; items: Array<{ tier: number; variant: RollResult["variant"] }>; jitter: number; hue: number };
+type SpinState = { key: number; active: boolean; items: Array<{ tier: number; variant: RollResult["variant"] }>; jitter: number; hue: number };
+
+const makeRestingSpin = (tier = 0, variant: RollResult["variant"] = "normal"): SpinState => ({
+  key: 0,
+  active: false,
+  items: Array.from({ length: SPIN_ITEMS }, (_, i) => ({
+    tier: i === SPIN_TARGET ? tier : i % 4 === 0 ? 1 : 0,
+    variant: i === SPIN_TARGET ? variant : "normal",
+  })),
+  jitter: 0,
+  hue: TIERS[tier]?.hue ?? 131,
+});
 
 export default function App() {
   const { save, saveRef, commit, ownerRef, status, storageEnabled, saveError, persistNow, claimOffline, retrySession } = useGameSession();
@@ -35,7 +46,7 @@ export default function App() {
   const pointerBounds = useRef<DOMRect | null>(null);
   const ids = useRef(0);
   const [lastRoll, setLastRoll] = useState<{ tier: number; variant: RollResult["variant"] }>({ tier: 0, variant: "normal" });
-  const [spin, setSpin] = useState<SpinState | null>(null);
+  const [spin, setSpin] = useState<SpinState>(() => makeRestingSpin());
   const spinTimer = useRef<number | undefined>(undefined);
   const spinEndAt = useRef(0);
   const spinKey = useRef(0);
@@ -153,21 +164,19 @@ export default function App() {
     if (!document.hidden) sfx.spin(ROLL_DURATION / 1000);
 
     // The rail: random fillers drawn from the player's real odds, with the true result at the marker.
-    if (effectsRef.current) {
-      const probabilities = tierProbabilities(getLuck(current));
-      const items = Array.from({ length: SPIN_ITEMS }, (_, i) =>
-        i === SPIN_TARGET
-          ? { tier: batch.best.tier, variant: batch.best.variant }
-          : { tier: drawTier(probabilities), variant: (Math.random() < 0.06 ? "shiny" : "normal") as RollResult["variant"] });
-      const win = batch.best;
-      const winHue = win.variant === "glitched" ? 185 : win.variant === "cursed" ? 345 : win.variant === "crystal" ? 203 : TIERS[win.tier].hue;
-      setSpin({ key: ++spinKey.current, items, jitter: (Math.random() - 0.5) * 26, hue: winHue });
-    }
+    const probabilities = tierProbabilities(getLuck(current));
+    const items = Array.from({ length: SPIN_ITEMS }, (_, i) =>
+      i === SPIN_TARGET
+        ? { tier: batch.best.tier, variant: batch.best.variant }
+        : { tier: drawTier(probabilities), variant: (Math.random() < 0.06 ? "shiny" : "normal") as RollResult["variant"] });
+    const win = batch.best;
+    const winHue = win.variant === "glitched" ? 185 : win.variant === "cursed" ? 345 : win.variant === "crystal" ? 203 : TIERS[win.tier].hue;
+    setSpin({ key: ++spinKey.current, active: true, items, jitter: (Math.random() - 0.5) * 26, hue: winHue });
 
     window.clearTimeout(spinTimer.current);
     spinTimer.current = window.setTimeout(() => {
       spinEndAt.current = 0;
-      setSpin(null);
+      setSpin((previous) => ({ ...previous, active: false }));
       const best = batch.best;
       if (effectsRef.current) {
         glyphAnimation.current?.cancel();
@@ -202,7 +211,7 @@ export default function App() {
   const cancelSpin = useCallback(() => {
     window.clearTimeout(spinTimer.current);
     spinEndAt.current = 0;
-    setSpin(null);
+    setSpin(makeRestingSpin());
   }, []);
 
   // Auto roll is a second roller on its own timer, running beside manual clicks.
@@ -364,6 +373,18 @@ export default function App() {
         </div>
 
         <div className="hud-actions">
+          <BlockButton
+            tone={save.auto ? "green" : "metal"}
+            className="auto-btn"
+            faceClassName="auto-btn-face"
+            onClick={toggleAuto}
+            aria-pressed={save.auto}
+            aria-label="Toggle auto roll"
+          >
+            <PixelIcon name="auto" muted={!save.auto} className="auto-btn-icon" />
+            <span className="tx-stroke auto-btn-label">AUTO</span>
+            <span className="tx-label auto-btn-state">{save.auto ? "ON" : "OFF"}</span>
+          </BlockButton>
           <div className="offline-action">
             <BlockButton tone={save.offlineReward ? "gold" : "metal"} className="settings-btn offline-btn" faceClassName="settings-face" onClick={() => openModal("offline")} aria-label={save.offlineReward ? `${fmt(save.offlineReward.amount)} offline clovers ready to collect` : "View offline earnings"} title="Offline earnings">
               <PixelIcon name="offline" />
@@ -428,7 +449,6 @@ export default function App() {
       <section className="play-space" aria-label="Clover roller" inert={uiBlocked}>
         <div className={`stage stage-${shownTier.id}${shownCrystal ? " is-crystal-stage" : ""}${shownCursed ? " is-cursed-stage" : ""}${shownGlitched ? " is-glitched-stage" : ""}`} style={{ "--h": shownGlitched ? 185 : shownCursed ? 345 : shownCrystal ? 203 : shownTier.hue } as CSSProperties}>
           <div className="stage-light" aria-hidden="true" />
-          {spin && effects && <SpinRail spin={spin} />}
 
           <button
             ref={buttonRef}
@@ -479,77 +499,7 @@ export default function App() {
           <span className="stage-spark stage-spark-four" aria-hidden="true" />
         </div>
 
-        <div className="play-copy">
-          <p className="tx-stroke roll-cta">CLICK TO ROLL!</p>
-
-          <div className="cool-row">
-            <div className={`cool${cooldown.active ? " is-active" : ""}`}>
-              <span className="tx-label">ROLLING</span>
-              <span className="cooldown-track px">
-                <i key={cooldown.token} className={cooldown.active ? "is-filling" : ""} style={{ "--roll-duration": `${cooldown.duration}ms` } as CSSProperties} />
-              </span>
-              <span className={`tx-stroke cool-state${cooldown.active ? "" : " is-ready"}`}>{cooldown.active ? "WAIT" : "READY"}</span>
-            </div>
-            <BlockButton
-              tone={save.auto ? "green" : "metal"}
-              className="auto-btn"
-              faceClassName="auto-btn-face"
-              onClick={toggleAuto}
-              aria-pressed={save.auto}
-              aria-label="Toggle auto roll"
-            >
-              <PixelIcon name="auto" muted={!save.auto} className="auto-btn-icon" />
-              <span className="tx-stroke auto-btn-label">AUTO</span>
-              <span className="tx-label auto-btn-state">{save.auto ? "ON" : "OFF"}</span>
-            </BlockButton>
-          </div>
-
-          <div className="roll-chips">
-            <Block tone="dark" className="chip chip-last-roll" faceClassName="chip-face">
-              <CloverImg tier={lastRoll.tier} variant={lastRoll.variant} size="sm" sparkles={false} effects={false} className="chip-clover" />
-              <span className="tx-label">LAST</span>
-              <RarityText tier={lastRoll.tier} variant={lastRoll.variant} animated={effects} className="chip-name">{variantPrefix(lastRoll.variant)}{shownTier.label}</RarityText>
-            </Block>
-            <Block tone="dark" className="chip" faceClassName="chip-face">
-              <PixelIcon name="dice" className="chip-icon" />
-              <span className="tx-stroke chip-value">x{rollsPerClick(save)}</span>
-              <span className="tx-label">PER CLICK</span>
-            </Block>
-            <Block tone="dark" className="chip" faceClassName="chip-face">
-              <PixelIcon name="coin" className="chip-icon" />
-              <span className="tx-stroke chip-value">x{valueMult(save).toFixed(1)}</span>
-              <span className="tx-label">VALUE</span>
-            </Block>
-            <Block tone="dark" className="chip" faceClassName="chip-face">
-              <PixelIcon name="log" className="chip-icon" />
-              <span className="tx-stroke chip-value">{fmt(save.rolls)}</span>
-              <span className="tx-label">ROLLS</span>
-            </Block>
-            {crystals && (
-              <Block tone="tint" className="chip chip-crystal" faceClassName="chip-face" style={{ "--h": 203 } as CSSProperties}>
-                <PixelIcon name="crystal" className="chip-icon" />
-                <span className="tx-label">CRYSTAL</span>
-                <span className="tx-stroke chip-value">1 IN {fmtOdds(1 / getCrystalChance(save))}</span>
-              </Block>
-            )}
-            {cursedOn && (
-              <Block tone="tint" className="chip chip-crystal chip-cursed" faceClassName="chip-face" style={{ "--h": 345 } as CSSProperties}>
-                <PixelIcon name="cursed" className="chip-icon" />
-                <span className="tx-label">CURSED</span>
-                <span className="tx-stroke chip-value">1 IN {fmtOdds(1 / getCursedChance(save))}</span>
-              </Block>
-            )}
-            {glitchedOn && (
-              <Block tone="tint" className="chip chip-crystal chip-glitched" faceClassName="chip-face" style={{ "--h": 185 } as CSSProperties}>
-                <PixelIcon name="glitched" className="chip-icon" />
-                <span className="tx-label">GLITCHED</span>
-                <span className="tx-stroke chip-value">1 IN {fmtOdds(1 / getGlitchedChance(save))}</span>
-              </Block>
-            )}
-          </div>
-
-          <p className="tx-label space-hint">{save.rebirths >= 1 && !crystals ? `OR PRESS SPACE / ${CRYSTAL_REBIRTHS - save.rebirths} MORE REBIRTH${CRYSTAL_REBIRTHS - save.rebirths === 1 ? "" : "S"} TO UNLOCK CRYSTALS` : crystals && !cursedOn ? `OR PRESS SPACE / ${CURSED_REBIRTHS - save.rebirths} MORE REBIRTH${CURSED_REBIRTHS - save.rebirths === 1 ? "" : "S"} TO UNLOCK CURSED` : cursedOn && !glitchedOn ? `OR PRESS SPACE / ${GLITCHED_REBIRTHS - save.rebirths} MORE REBIRTH${GLITCHED_REBIRTHS - save.rebirths === 1 ? "" : "S"} TO UNLOCK GLITCHED` : "OR PRESS SPACE"}</p>
-        </div>
+        <SpinRail spin={spin} effects={effects} />
       </section>
 
       {/* ---------- FX ---------- */}
@@ -599,7 +549,7 @@ const clampUnit = (n: number) => Math.max(-0.5, Math.min(0.5, n));
  * The horizontal rarity rail. Remounts per spin (key), starts at rest and
  * decelerates over the full roll so the marked result lands under the pointer.
  */
-function SpinRail({ spin }: { spin: SpinState }) {
+function SpinRail({ spin, effects }: { spin: SpinState; effects: boolean }) {
   const railRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const [landed, setLanded] = useState(false);
@@ -607,6 +557,7 @@ function SpinRail({ spin }: { spin: SpinState }) {
   // The reel stops just before the reveal; the last beat is a colour hit on the winning slot.
   useEffect(() => {
     setLanded(false);
+    if (spin.key === 0) return;
     const timer = window.setTimeout(() => setLanded(true), ROLL_DURATION - SPIN_SETTLE);
     return () => window.clearTimeout(timer);
   }, [spin.key]);
@@ -620,6 +571,11 @@ function SpinRail({ spin }: { spin: SpinState }) {
     const pad = parseFloat(getComputedStyle(strip).paddingLeft || "8") || 8;
     const target = pad + SPIN_TARGET * (cell.offsetWidth + gap) + cell.offsetWidth / 2;
     const dx = Math.max(0, target - rail.clientWidth / 2 + spin.jitter);
+    if (spin.key === 0 || !effects) {
+      strip.style.transition = "none";
+      strip.style.transform = `translateX(${-dx}px)`;
+      return;
+    }
     strip.style.transition = "none";
     strip.style.transform = "translateX(0)";
     let raf2 = 0;
@@ -630,12 +586,19 @@ function SpinRail({ spin }: { spin: SpinState }) {
       });
     });
     return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
-  }, [spin.key, spin.jitter]);
+  }, [spin.key, spin.jitter, effects]);
+
+  const targetItem = spin.items[SPIN_TARGET];
+  const caption = spin.active
+    ? "ROLLING"
+    : spin.key === 0
+      ? "READY TO ROLL"
+      : `${variantPrefix(targetItem.variant)}${TIERS[targetItem.tier].name.toUpperCase()}`;
 
   return (
-    <div className={`spin-rail${landed ? " is-landed" : ""}`} style={{ "--win": spin.hue } as CSSProperties} aria-hidden="true">
+    <div className={`spin-rail${spin.active ? " is-spinning" : " is-idle"}${landed ? " is-landed" : ""}`} style={{ "--win": spin.hue } as CSSProperties} aria-hidden="true">
       <Block tone="dark" className="spin-frame" faceClassName="spin-frame-face">
-        <span className="tx-label spin-caption">ROLLING</span>
+        <span className="tx-label spin-caption">{caption}</span>
         <div ref={railRef} className="spin-window px">
           <div ref={stripRef} className="spin-strip">
             {spin.items.map((item, index) => {
