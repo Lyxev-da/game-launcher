@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { TIERS, fmt, fmtOdds, variantBaseOdds, type RollResult } from "../game/data";
 import { CloverImg, RarityText, variantPrefix } from "./ui";

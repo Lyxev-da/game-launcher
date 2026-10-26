@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { memo, useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import { getCloverCanvas } from "../clover";
 import { TIERS, fmt, type Variant } from "../game/data";

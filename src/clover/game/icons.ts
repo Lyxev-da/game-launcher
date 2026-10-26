@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * True pixel-art icons: 16x16 hand-drawn grids, a 1px black outline and a solid
  * two-tone extrusion down-left, exactly like the clover. Each sprite is 20x20

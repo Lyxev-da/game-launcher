@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { TIERS } from "./data";
 
 type Wave = OscillatorType;

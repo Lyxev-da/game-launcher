@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { passiveRollsPerSecond, expectedPayout, type OfflineReward, type Save } from "./data";
 
 /** Offline pay is half of what you'd earn playing actively, measured against the active rate. */

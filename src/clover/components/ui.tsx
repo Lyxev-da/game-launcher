@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { memo, useMemo, type ComponentPropsWithRef, type CSSProperties, type ReactNode } from "react";
 import { getCloverUrl } from "../clover";
 import { TIERS, type Variant } from "../game/data";

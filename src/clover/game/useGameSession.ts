@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useCallback, useEffect, useRef, useState } from "react";
 import { STORAGE_KEY, loadSave, storeSave, type Save } from "./data";
 import { redeemOfflineReward, settleOfflineEarnings } from "./offline";

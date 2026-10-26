@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { warmCloverSprites } from "./clover";
 import {

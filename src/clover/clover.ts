@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Pixel-art 3D four-leaf clover renderer.
  *

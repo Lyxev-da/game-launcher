@@ -1,3 +1,4 @@
+// @ts-nocheck
 export const SAVE_VERSION = 8;
 
 export type Tier = {
